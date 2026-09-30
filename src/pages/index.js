@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import dynamic from "next/dynamic";
 import Head from "next/head";
 import {
@@ -28,7 +28,10 @@ import {
   User,
   ArrowLeft,
   Crosshair,
-  Clock
+  Clock,
+  List,
+  Map as MapIcon,
+  ExternalLink
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { readSession, SESSION_COOKIE } from "../lib/session";
@@ -113,6 +116,20 @@ const timeAgo = (value) => {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 };
 
+// Matches Tailwind's `lg` breakpoint, where the lead detail sits beside the
+// map instead of opening as a full-screen sheet
+const useIsDesktop = () => {
+  const [isDesktop, setIsDesktop] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(min-width: 1024px)");
+    const update = () => setIsDesktop(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  return isDesktop;
+};
+
 const isStale = (lead) => {
   if (!OPEN_STATUSES.includes(lead.status)) return false;
   const last = toDate(lead.lastActivityAt) || toDate(lead.createdAt);
@@ -130,7 +147,9 @@ export default function CrewLeads({ userName, initialLeads = [] }) {
   const [formData, setFormData] = useState(emptyForm);
   const [geocoding, setGeocoding] = useState(false);
   const [showMore, setShowMore] = useState(false);
-  const panelRef = useRef(null);
+  const [mobileView, setMobileView] = useState("list");
+  const [mapResetKey, setMapResetKey] = useState(0);
+  const isDesktop = useIsDesktop();
 
   const refresh = useCallback(async () => {
     try {
@@ -157,20 +176,14 @@ export default function CrewLeads({ userName, initialLeads = [] }) {
   const upsertLead = (lead) =>
     setLeads(prev => [lead, ...prev.filter(l => l.id !== lead.id)]);
 
-  // On phones the detail panel sits below the map — bring it into view
+  // Lock page scroll behind the form sheet, and behind the lead sheet on phones
+  const sheetOpen = showModal || (!isDesktop && Boolean(selectedId));
   useEffect(() => {
-    if (selectedId && window.innerWidth < 1024) {
-      panelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }, [selectedId]);
-
-  // Lock page scroll behind the form sheet
-  useEffect(() => {
-    if (!showModal) return;
+    if (!sheetOpen) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = prev; };
-  }, [showModal]);
+  }, [sheetOpen]);
 
   const counts = useMemo(() => {
     const byStatus = Object.fromEntries(LEAD_STATUSES.map(s => [s.id, 0]));
@@ -347,36 +360,38 @@ export default function CrewLeads({ userName, initialLeads = [] }) {
         <title>Crew Leads | Jogo</title>
       </Head>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-28 sm:py-8">
         {/* Header */}
-        <div className="flex items-start sm:items-center justify-between gap-4 mb-5 sm:mb-6">
+        <div className="flex items-center justify-between gap-4 mb-4 sm:mb-6">
           <div className="min-w-0">
             <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">Crew Leads</h1>
-            <p className="text-sm text-slate-500 mt-0.5">
+            <p className="hidden sm:block text-sm text-slate-500 mt-0.5">
               Crews we&apos;re recruiting onto Jogo, shared across the team.
             </p>
           </div>
-          <button onClick={openCreate} className={`${btnPrimary} flex-shrink-0`}>
-            <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">New lead</span>
-            <span className="sm:hidden">New</span>
-          </button>
+          {/* Phones get the floating button instead */}
+          <div className="hidden sm:block flex-shrink-0">
+            <button onClick={openCreate} className={btnPrimary}>
+              <Plus className="h-4 w-4" /> New lead
+            </button>
+          </div>
         </div>
 
         {/* Metrics */}
         {/* gap-px over a slate background draws the dividers at any column count */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-slate-200 border border-slate-200 rounded-xl overflow-hidden mb-4">
-          <Metric label="Total leads" value={total} />
-          <Metric label="In progress" value={openCount}
+        {/* Phones: one compact row with short labels, details hidden */}
+        <div className="grid grid-cols-4 sm:grid-cols-2 lg:grid-cols-4 gap-px bg-slate-200 border border-slate-200 rounded-xl overflow-hidden mb-3 sm:mb-4">
+          <Metric label="Total leads" short="Leads" value={total} />
+          <Metric label="In progress" short="Active" value={openCount}
             sub={staleCount ? `${staleCount} stale (${STALE_DAYS}d+ quiet)` : "All up to date"} />
-          <Metric label="Running on Jogo" value={running}
+          <Metric label="Running on Jogo" short="On Jogo" value={running}
             sub={playersOnJogo ? `~${playersOnJogo} players` : null} accent />
-          <Metric label="Conversion" value={total ? `${Math.round((running / total) * 100)}%` : "—"}
+          <Metric label="Conversion" short="Conv." value={total ? `${Math.round((running / total) * 100)}%` : "—"}
             sub="Running ÷ total" />
         </div>
 
         {/* Pipeline + filters */}
-        <div className="bg-white border border-slate-200 rounded-xl p-3 sm:p-4 mb-4">
+        <div className="bg-white border border-slate-200 rounded-xl p-3 sm:p-4 mb-3 sm:mb-4">
           {total > 0 && (
             <div className="flex h-1.5 rounded-full overflow-hidden bg-slate-100 mb-3">
               {LEAD_STATUSES.filter(s => counts[s.id]).map(s => (
@@ -396,15 +411,32 @@ export default function CrewLeads({ userName, initialLeads = [] }) {
           </div>
         </div>
 
+        {/* Phones: one view at a time */}
+        <div className="lg:hidden grid grid-cols-2 p-1 bg-slate-200/70 rounded-lg mb-3">
+          {[["list", "List", List], ["map", "Map", MapIcon]].map(([id, label, Icon]) => (
+            <button key={id} onClick={() => setMobileView(id)}
+              className={`flex items-center justify-center gap-1.5 h-9 rounded-md text-sm font-medium transition-colors ${
+                mobileView === id ? "bg-white text-slate-900 shadow-sm" : "text-slate-600"
+              }`}>
+              <Icon className="h-4 w-4" /> {label}
+            </button>
+          ))}
+        </div>
+
         {/* Map + list */}
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-          <div className="lg:col-span-3 h-[300px] sm:h-[400px] lg:h-[620px] bg-white border border-slate-200 rounded-xl overflow-hidden">
-            <LeadsMap leads={filteredLeads} selectedId={selectedId} onSelect={setSelectedId} />
+          <div className={`${mobileView === "map" ? "block" : "hidden"} lg:block lg:col-span-3 h-[calc(100dvh-21rem)] min-h-[340px] lg:h-[620px] bg-white border border-slate-200 rounded-xl overflow-hidden`}>
+            <LeadsMap
+              leads={filteredLeads}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              resetKey={mapResetKey}
+              onReset={() => setMapResetKey(k => k + 1)}
+            />
           </div>
 
-          <div ref={panelRef}
-            className="lg:col-span-2 h-[560px] lg:h-[620px] bg-white border border-slate-200 rounded-xl flex flex-col overflow-hidden scroll-mt-16">
-            {selectedLead ? (
+          <div className={`${mobileView === "list" ? "flex" : "hidden"} lg:flex lg:col-span-2 lg:h-[620px] bg-white border border-slate-200 rounded-xl flex-col overflow-hidden`}>
+            {selectedLead && isDesktop ? (
               <LeadDetail
                 lead={selectedLead}
                 onBack={() => setSelectedId(null)}
@@ -426,7 +458,8 @@ export default function CrewLeads({ userName, initialLeads = [] }) {
                     />
                   </div>
                 </div>
-                <div className="flex-1 overflow-y-auto">
+                {/* Phones scroll the whole page; desktop scrolls inside the panel */}
+                <div className="lg:flex-1 lg:overflow-y-auto">
                   {filteredLeads.length === 0 ? (
                     <div className="text-center py-14 px-6">
                       <p className="text-sm font-medium text-slate-900 mb-1">
@@ -460,12 +493,33 @@ export default function CrewLeads({ userName, initialLeads = [] }) {
         </div>
       </div>
 
+      {/* Phones: the lead opens as a full-screen sheet */}
+      {selectedLead && !isDesktop && (
+        <div className="fixed inset-0 z-40 bg-white flex flex-col pt-[env(safe-area-inset-top)]">
+          <LeadDetail
+            lead={selectedLead}
+            onBack={() => setSelectedId(null)}
+            onEdit={() => openEdit(selectedLead)}
+            onDelete={() => handleDelete(selectedLead)}
+            onUpdateStatus={updateStatus}
+          />
+        </div>
+      )}
+
+      {/* Phones: add button within thumb reach */}
+      {!sheetOpen && (
+        <button onClick={openCreate} aria-label="New lead"
+          className="sm:hidden fixed right-4 bottom-[max(1.25rem,env(safe-area-inset-bottom))] z-30 inline-flex items-center gap-2 h-14 pl-5 pr-6 rounded-full bg-slate-900 text-white text-sm font-semibold shadow-lg shadow-slate-900/25 active:scale-95 transition-transform">
+          <Plus className="h-5 w-5" /> New lead
+        </button>
+      )}
+
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
           <div className="absolute inset-0 bg-slate-900/50" onClick={closeModal} />
           <form
             onSubmit={handleSubmit}
-            className="relative min-w-0 bg-white w-full sm:max-w-xl h-[100dvh] sm:h-auto sm:max-h-[90vh] sm:rounded-xl shadow-xl flex flex-col"
+            className="relative min-w-0 bg-white w-full sm:max-w-xl h-[100dvh] sm:h-auto sm:max-h-[90vh] sm:rounded-xl shadow-xl flex flex-col pt-[env(safe-area-inset-top)] sm:pt-0"
           >
             {/* Header */}
             <div className="flex items-center justify-between px-4 sm:px-6 h-14 border-b border-slate-200 flex-shrink-0">
@@ -504,10 +558,10 @@ export default function CrewLeads({ userName, initialLeads = [] }) {
                     return (
                       <button key={s.id} type="button"
                         onClick={() => setFormData(f => ({ ...f, source: s.id }))}
-                        className={`flex items-center justify-center gap-1.5 h-8 rounded-md text-xs sm:text-sm font-medium transition-colors ${
+                        className={`flex items-center justify-center gap-1.5 h-10 sm:h-8 rounded-md text-xs sm:text-sm font-medium transition-colors ${
                           active ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
                         }`}>
-                        <Icon className="h-3.5 w-3.5 hidden sm:block" />
+                        <Icon className="h-3.5 w-3.5 hidden min-[400px]:block" />
                         {s.label}
                       </button>
                     );
@@ -518,17 +572,15 @@ export default function CrewLeads({ userName, initialLeads = [] }) {
                   autoCapitalize="none" autoCorrect="off" />
               </FormField>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <FormField label="Status">
-                  <select value={formData.status} onChange={setField("status")} className={inputClass}>
-                    {LEAD_STATUSES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-                  </select>
-                </FormField>
-                <FormField label="Contact name">
-                  <input type="text" value={formData.contactName} onChange={setField("contactName")}
-                    className={inputClass} placeholder="Who runs the crew" />
-                </FormField>
-              </div>
+              <FormField label="Status">
+                <StatusPicker value={formData.status}
+                  onChange={(status) => setFormData(f => ({ ...f, status }))} />
+              </FormField>
+
+              <FormField label="Contact name">
+                <input type="text" value={formData.contactName} onChange={setField("contactName")}
+                  className={inputClass} placeholder="Who runs the crew" autoComplete="off" />
+              </FormField>
 
               <FormField label="Notes">
                 <textarea rows={2} value={formData.notes} onChange={setField("notes")}
@@ -545,12 +597,14 @@ export default function CrewLeads({ userName, initialLeads = [] }) {
 
                 {showMore && (
                   <div className="space-y-4 pt-3">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 gap-3">
                       <FormField label="Phone">
-                        <input type="tel" value={formData.phone} onChange={setField("phone")} className={inputClass} />
+                        <input type="tel" inputMode="tel" value={formData.phone} onChange={setField("phone")}
+                          className={inputClass} autoComplete="off" />
                       </FormField>
                       <FormField label="Email">
-                        <input type="email" value={formData.email} onChange={setField("email")} className={inputClass} />
+                        <input type="email" inputMode="email" value={formData.email} onChange={setField("email")}
+                          className={inputClass} autoCapitalize="none" autoComplete="off" />
                       </FormField>
                       <FormField label="Crew size">
                         <input type="number" inputMode="numeric" min="0" value={formData.crewSize}
@@ -569,7 +623,7 @@ export default function CrewLeads({ userName, initialLeads = [] }) {
                           {geocoding ? "Finding…" : "Find"}
                         </button>
                       </div>
-                      <div className="h-[200px] rounded-lg border border-slate-200 overflow-hidden">
+                      <div className="h-[240px] rounded-lg border border-slate-200 overflow-hidden">
                         <LocationPicker
                           latitude={formData.latitude}
                           longitude={formData.longitude}
@@ -588,17 +642,18 @@ export default function CrewLeads({ userName, initialLeads = [] }) {
             </div>
 
             {/* Footer — pinned to the bottom on mobile */}
-            <div className="flex-shrink-0 border-t border-slate-200 px-4 sm:px-6 py-3 flex flex-col-reverse sm:flex-row sm:items-center gap-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+            <div className="flex-shrink-0 border-t border-slate-200 bg-white px-4 sm:px-6 pt-3 flex items-center gap-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
               <p className="hidden sm:block text-xs text-slate-400 mr-auto">
                 {typeof formData.latitude === "number" ? "Pinned on map" : "Pin is placed from the city on save"}
               </p>
               {!editingLead && (
                 <button type="button" disabled={saving}
-                  onClick={(e) => handleSubmit(e, { addAnother: true })} className={btnSecondary}>
-                  Save &amp; add another
+                  onClick={(e) => handleSubmit(e, { addAnother: true })} className={`${btnSecondary} flex-1 sm:flex-none`}>
+                  <span className="sm:hidden">Save + next</span>
+                  <span className="hidden sm:inline">Save &amp; add another</span>
                 </button>
               )}
-              <button type="submit" disabled={saving} className={btnPrimary}>
+              <button type="submit" disabled={saving} className={`${btnPrimary} flex-1 sm:flex-none`}>
                 {saving ? "Saving…" : editingLead ? "Save changes" : "Add lead"}
               </button>
             </div>
@@ -610,8 +665,8 @@ export default function CrewLeads({ userName, initialLeads = [] }) {
 }
 
 // text-base on mobile keeps iOS from zooming into inputs
-const inputClass = "block w-full h-10 px-3 bg-white border border-slate-300 rounded-lg text-base sm:text-sm text-slate-900 placeholder-slate-400 shadow-sm focus:outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900 transition-colors";
-const btnBase = "inline-flex items-center justify-center gap-1.5 h-10 px-4 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap";
+const inputClass = "block w-full h-11 sm:h-10 px-3 bg-white border border-slate-300 rounded-lg text-base sm:text-sm text-slate-900 placeholder-slate-400 shadow-sm focus:outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900 transition-colors";
+const btnBase = "inline-flex items-center justify-center gap-1.5 h-11 sm:h-10 px-4 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap";
 const btnPrimary = `${btnBase} bg-slate-900 text-white hover:bg-slate-800`;
 const btnSecondary = `${btnBase} bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 shadow-sm`;
 
@@ -632,19 +687,51 @@ const FormField = ({ label, required, children }) => (
   </div>
 );
 
+// Tap-to-pick status, easier on a phone than a native dropdown
+const StatusPicker = ({ value, onChange, current }) => (
+  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+    {LEAD_STATUSES.map(s => {
+      const active = value === s.id;
+      return (
+        <button key={s.id} type="button" onClick={() => onChange(s.id)}
+          className={`flex items-center gap-2 h-10 sm:h-9 px-2.5 rounded-lg border text-sm text-left transition-colors ${
+            active
+              ? "border-slate-900 bg-slate-900 text-white"
+              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 active:bg-slate-100"
+          }`}>
+          <span className="h-2 w-2 rounded-full flex-shrink-0" style={{ background: s.color }} />
+          <span className="truncate">{s.label}</span>
+          {current === s.id && !active && <span className="ml-auto text-[10px] text-slate-400">now</span>}
+        </button>
+      );
+    })}
+  </div>
+);
+
+const QuickAction = ({ href, icon: Icon, label }) => (
+  <a href={href} target={href.startsWith("http") ? "_blank" : undefined} rel="noreferrer"
+    className="flex flex-col items-center justify-center gap-1 h-16 rounded-xl bg-slate-100 text-slate-800 text-xs font-medium hover:bg-slate-200 active:bg-slate-200 transition-colors">
+    <Icon className="h-5 w-5" />
+    {label}
+  </a>
+);
+
 const MapPlaceholder = () => (
   <div className="h-full w-full flex items-center justify-center bg-slate-100">
     <div className="animate-spin rounded-full h-6 w-6 border-2 border-slate-200 border-t-slate-900"></div>
   </div>
 );
 
-const Metric = ({ label, value, sub, accent }) => (
-  <div className="bg-white p-4 sm:p-5 min-w-0">
-    <div className="text-xs sm:text-sm text-slate-500">{label}</div>
-    <div className={`text-2xl sm:text-3xl font-semibold tracking-tight mt-1 ${accent ? "text-emerald-700" : "text-slate-900"}`}>
+const Metric = ({ label, short, value, sub, accent }) => (
+  <div className="bg-white px-3 py-2.5 sm:p-5 min-w-0">
+    <div className="text-[11px] sm:text-sm text-slate-500 truncate">
+      <span className="sm:hidden">{short}</span>
+      <span className="hidden sm:inline">{label}</span>
+    </div>
+    <div className={`text-lg sm:text-3xl font-semibold tracking-tight sm:mt-1 ${accent ? "text-emerald-700" : "text-slate-900"}`}>
       {value}
     </div>
-    {sub && <div className="text-xs text-slate-500 mt-1 truncate">{sub}</div>}
+    {sub && <div className="hidden sm:block text-xs text-slate-500 mt-1 truncate">{sub}</div>}
   </div>
 );
 
@@ -739,20 +826,29 @@ const LeadDetail = ({ lead, onBack, onEdit, onDelete, onUpdateStatus }) => {
   const history = [...(lead.history || [])].sort((a, b) => (b.at || "").localeCompare(a.at || ""));
   const changed = nextStatus !== lead.status;
 
+  const found = getLeadHandle(lead);
+  const handleHref = found?.source.link(found.handle);
+  const actions = [
+    lead.phone && { href: `tel:${lead.phone}`, icon: Phone, label: "Call" },
+    lead.phone && { href: `sms:${lead.phone}`, icon: MessageCircle, label: "Text" },
+    lead.email && { href: `mailto:${lead.email}`, icon: Mail, label: "Email" },
+    handleHref && { href: handleHref, icon: ExternalLink, label: found.source.label },
+  ].filter(Boolean);
+
   return (
-    <div className="flex flex-col h-full">
-      <div className="px-4 pt-3 pb-4 border-b border-slate-200">
-        <div className="flex items-center justify-between mb-3">
-          <button onClick={onBack} className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 -ml-1 p-1">
-            <ArrowLeft className="h-4 w-4" /> All leads
+    <div className="flex flex-col h-full min-h-0">
+      <div className="px-4 pt-2 lg:pt-3 pb-4 border-b border-slate-200">
+        <div className="flex items-center justify-between mb-2 lg:mb-3">
+          <button onClick={onBack} className="inline-flex items-center gap-1 h-10 text-sm font-medium text-slate-600 hover:text-slate-900 -ml-1 px-1">
+            <ArrowLeft className="h-5 w-5 lg:h-4 lg:w-4" /> All leads
           </button>
           <div className="flex items-center gap-1">
             <button onClick={onEdit} aria-label="Edit lead"
-              className="p-2 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100">
-              <Pencil className="h-4 w-4" />
+              className="inline-flex items-center gap-1.5 h-10 px-3 rounded-md text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-100">
+              <Pencil className="h-4 w-4" /> <span className="lg:hidden">Edit</span>
             </button>
             <button onClick={onDelete} aria-label="Delete lead"
-              className="p-2 rounded-md text-slate-500 hover:text-red-600 hover:bg-red-50">
+              className="h-10 w-10 inline-flex items-center justify-center rounded-md text-slate-500 hover:text-red-600 hover:bg-red-50">
               <Trash2 className="h-4 w-4" />
             </button>
           </div>
@@ -765,10 +861,15 @@ const LeadDetail = ({ lead, onBack, onEdit, onDelete, onUpdateStatus }) => {
           <MapPin className="h-3.5 w-3.5 flex-shrink-0" />
           <span className="truncate">{[lead.address, lead.city, lead.state].filter(Boolean).join(", ") || "No location"}</span>
         </div>
+        {actions.length > 0 && (
+          <div className="grid gap-2 mt-4" style={{ gridTemplateColumns: `repeat(${actions.length}, minmax(0, 1fr))` }}>
+            {actions.map(a => <QuickAction key={a.label} {...a} />)}
+          </div>
+        )}
       </div>
 
-      <div className="flex-1 overflow-y-auto">
-        <dl className="px-4 py-3 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2.5 text-sm border-b border-slate-200">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)]">
+        <dl className="px-4 py-3 grid grid-cols-2 gap-x-4 gap-y-3 text-sm border-b border-slate-200">
           {getLeadHandle(lead) && (
             <DetailItem label="Found on">
               <HandleLink lead={lead} className="text-slate-900" />
@@ -791,9 +892,7 @@ const LeadDetail = ({ lead, onBack, onEdit, onDelete, onUpdateStatus }) => {
         {/* Log an update */}
         <form onSubmit={submitUpdate} className="px-4 py-4 border-b border-slate-200 space-y-2">
           <div className="text-xs font-medium text-slate-500">Log an update</div>
-          <select value={nextStatus} onChange={(e) => setNextStatus(e.target.value)} className={inputClass}>
-            {LEAD_STATUSES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-          </select>
+          <StatusPicker value={nextStatus} onChange={setNextStatus} current={lead.status} />
           <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)}
             className={`${inputClass} h-auto py-2 resize-none`} placeholder="What happened? Called, DM'd, met up…" />
           <button type="submit" disabled={!changed && !note.trim()} className={`${btnPrimary} w-full`}>
