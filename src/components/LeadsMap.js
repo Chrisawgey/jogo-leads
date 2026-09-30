@@ -4,7 +4,7 @@ import { LEAD_STATUSES, getLeadStatus } from '../lib/leads';
 
 const US_CENTER = [39.8283, -98.5795];
 // Same free OpenStreetMap tiles the dashboard map uses — no API key needed
-const TILES = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 const TILE_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
 const hasCoords = (lead) =>
