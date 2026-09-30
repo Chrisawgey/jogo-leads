@@ -1,0 +1,30 @@
+{
+  "name": "jogo-leads",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "lint:fix": "eslint . --fix"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.8.0",
+    "leaflet": "^1.9.4",
+    "lucide-react": "^0.487.0",
+    "next": "15.2.8",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-hot-toast": "^2.5.2",
+    "react-leaflet": "^5.0.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@rushstack/eslint-patch": "^1.11.0",
+    "@tailwindcss/postcss": "^4",
+    "eslint": "^9.24.0",
+    "eslint-config-next": "^15.2.4",
+    "tailwindcss": "^4"
+  }
+}
